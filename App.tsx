@@ -9,12 +9,15 @@ import {
   StyleSheet,
   Alert,
 } from 'react-native';
-
 import PushNotification from 'react-native-push-notification';
 import { PermissionsAndroid, Platform } from 'react-native';
+import AsyncStorage  from '@react-native-async-storage/async-storage';
+import axios from 'axios';
+import { Client } from '@stomp/stompjs';
+import SockJS from 'sockjs-client';
 
 async function requestNotificationPermission() {
-  if (Platform.OS === 'android' && Platform.Version >= 33) { // Android 13 (API 33)
+  if (Platform.OS === 'android' && Platform.Version >= 33) { 
     try {
       const granted = await PermissionsAndroid.request(
         PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS
@@ -30,7 +33,8 @@ async function requestNotificationPermission() {
   }
 }
 
-function initPushNotifications() {
+function initPushNotifications() 
+{
   PushNotification.createChannel(
     {
       channelId: "zapmsg-channel",
@@ -52,8 +56,68 @@ function initPushNotifications() {
   });
 }
 
-const App = () => {
 
+// WebSocket setup function
+const initWebSocket = () => 
+  {
+    console.log('WebSocket connection started'); 
+    const ws = new WebSocket('ws://192.168.0.101:8182/notifications');
+    ws.onopen = () => {
+      // Connection opened
+      console.log('WebSocket connection opened');
+      ws.send('Hello, server!'); 
+    };
+   
+    ws.onmessage = (e: any) => {
+      try {
+          // Parse the JSON data
+          const data = JSON.parse(e.data);
+  
+          // Extract the title and content from the message
+          const msgTitle = data.msgtitle;
+          const msgContent = data.msgcontent;
+  
+          // Pass the extracted data to showNotification
+          showNotification(msgTitle, msgContent);
+  
+          // Log the received message
+          console.log(`This is from onmsg: ${msgTitle} : ${msgContent}`);
+      } catch (error) {
+          console.error("Error parsing WebSocket message", error);
+      }
+  };
+
+    ws.onerror = (e:any) => {
+      // An error occurred
+      console.log(e)
+      console.log(e.message);
+    };
+    ws.onclose = (e:any) => {
+      // Connection closed
+      console.log(e.code, e.reason);
+    };
+  
+  };
+
+
+// Function to trigger local notification
+function showNotification(title: string, message: string){
+  PushNotification.localNotification({
+    title: title,
+    message: message,
+    playSound: true,
+    soundName: 'default',
+    channelId: 'zapmsg-channel'
+  });
+  console.log("Notification shown:", title, message);
+}
+
+const App = () => {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [isPasswordVisible, setIsPasswordVisible] = useState(false);
+  const [isVisible, setisVisible] = useState(true);
+  const [nameFromStorage, setnameFromStorage] = useState<string | null>(null);
 
   useEffect(() => {
     // Request notification permission on Android 13+
@@ -61,34 +125,64 @@ const App = () => {
 
     // Initialize push notifications
     initPushNotifications();
+
+    // Initialize WebSocket connection
+    initWebSocket();
+
   }, []);
 
-
-
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-    const [isPasswordVisible, setIsPasswordVisible] = useState(false);
-
-     
-
-  const showNotification = () => {
-    PushNotification.localNotification({
-      title: "Goku",
-      message: "Is the Final Boss!!",
-      playSound: true,
-      soundName: 'default',
-      channelId:'zapmsg-channel'
-    });
-    console.log("show noti called !!");
-  };
+  const nameFromStorageFunction=async()=>{
+    let name= await AsyncStorage.getItem('username');
+    setnameFromStorage(name);
+    return name;
+  }
 
   const handleLogin = async () => {
     try {
-      
-      showNotification();
+
+      try {
+      const response = await axios.post('http://192.168.0.101:8080/login', {
+        username: username,
+        password: password
+        });
+        console.log("api hit : "+response.data.status+" : "+response.data.msg);
+      } catch (error: any) {
+
+        if (error.response) {
+          // The request was made and the server responded with a status code
+          // that falls out of the range of 2xx
+          console.error("Response data:", error.response.data);
+          console.error("Response status:", error.response.status);
+          console.error("Response headers:", error.response.headers);
+      } else if (error.request) {
+          // The request was made but no response was received
+          console.error("Request data:", error.request);
+      } else {
+          // Something happened in setting up the request that triggered an Error
+          console.error("Error message:", error.message);
+      }
+      console.error("Config:", error.config);
+      console.error("Full error object:", error);
+
+      }
+
+
+      if(username === "akshay" && password === "123") {
+        await AsyncStorage.setItem('username', "AkshayKochale");
+        await AsyncStorage.setItem('password', username);
+        setisVisible(false);
+        nameFromStorageFunction();
+      }
     } catch (error) {
+      console.log("outside")
       Alert.alert('Login Failed', "Try Valid Username and Password");
     }
+  };
+
+  const handleLogout = async () => {
+    await AsyncStorage.removeItem('username');
+    await AsyncStorage.removeItem('password');
+    setisVisible(true);
   };
 
   return (
@@ -104,21 +198,27 @@ const App = () => {
           </View>
 
           <TextInput
-            style={styles.inputBox}
+            style={isVisible ? styles.inputBox : styles.invisible}
             placeholder="Enter Username"
             value={username}
             onChangeText={setUsername}
           />
           <TextInput
-            style={styles.inputBox}
+            style={isVisible ? styles.inputBox : styles.invisible}
             placeholder="Enter Password"
             value={password}
             onChangeText={setPassword}
             secureTextEntry={!isPasswordVisible}
           />
 
-          <TouchableOpacity onPress={handleLogin} style={styles.submitButton}>
+          <TouchableOpacity onPress={handleLogin} style={isVisible ? styles.submitButton : styles.invisible}>
             <Text style={styles.submitButtonText}>Login</Text>
+          </TouchableOpacity>
+
+          <Text style={isVisible ? styles.invisible : styles.msg}>{nameFromStorage} waiting for notification....</Text>
+          
+          <TouchableOpacity onPress={handleLogout} style={isVisible ? styles.invisible : styles.submitButton}>
+            <Text style={styles.submitButtonText}>LogOut</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -177,6 +277,13 @@ const styles = StyleSheet.create({
   submitButtonText: {
     color: '#fff',
     fontWeight: 'bold',
+  },
+  invisible: {
+    display: 'none',
+  },
+  msg: {
+    fontSize: 20,
+    textAlign: 'center',
   },
 });
 
