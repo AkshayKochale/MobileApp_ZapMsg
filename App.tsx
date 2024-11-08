@@ -58,10 +58,10 @@ function initPushNotifications()
 
 
 // WebSocket setup function
-const initWebSocket = () => 
+const initWebSocket = (userId:string) => 
   {
     console.log('WebSocket connection started'); 
-    const ws = new WebSocket('ws://192.168.0.101:8182/notifications');
+    const ws = new WebSocket(`ws://192.168.0.101:8182/notifications?userId=${userId}`);
     ws.onopen = () => {
       // Connection opened
       console.log('WebSocket connection opened');
@@ -126,9 +126,6 @@ const App = () => {
     // Initialize push notifications
     initPushNotifications();
 
-    // Initialize WebSocket connection
-    initWebSocket();
-
   }, []);
 
   const nameFromStorageFunction=async()=>{
@@ -146,6 +143,8 @@ const App = () => {
         password: password
         });
         console.log("api hit : "+response.data.status+" : "+response.data.msg);
+        // Initialize WebSocket connection
+          initWebSocket(username);
       } catch (error: any) {
 
         if (error.response) {
